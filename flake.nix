@@ -11,6 +11,19 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
+        gtkBase = pkgs.gtk4.override {
+          trackerSupport = false;
+          cupsSupport = false;
+          vulkanSupport = false;
+          broadwaySupport = false;
+        };
+
+        gtk = gtkBase.overrideAttrs (old: {
+          mesonFlags = (old.mesonFlags or [ ]) ++ [
+            "-Dmedia-gstreamer=disabled"
+          ];
+        });
+
         desktopItem = pkgs.makeDesktopItem {
           name = "mdv";
           desktopName = "mdv";
@@ -30,18 +43,25 @@
 
           cargoLock.lockFile = ./Cargo.lock;
 
+          env = {
+            PKG_CONFIG_PATH = "${gtk.dev}/lib/pkgconfig";
+          };
+
           nativeBuildInputs = with pkgs; [
             pkg-config
-            wrapGAppsHook4
             copyDesktopItems
+            makeBinaryWrapper
           ];
 
-          buildInputs = with pkgs; [
-            gtk4
-            webkitgtk_6_0
-          ];
+          buildInputs = [ gtk ];
 
           desktopItems = [ desktopItem ];
+
+          postFixup = ''
+            wrapProgram $out/bin/mdv \
+              --prefix XDG_DATA_DIRS : ${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/gsettings-desktop-schemas-${pkgs.gsettings-desktop-schemas.version}:${gtk}/share/gsettings-schemas/gtk4-${gtk.version} \
+              --prefix XDG_DATA_DIRS : $out/share
+          '';
 
           meta = with pkgs.lib; {
             description = "Minimal keyboard-driven markdown viewer with vim keybindings";
@@ -66,8 +86,7 @@
             pkg-config
             rust-analyzer
             rustup
-            gtk4
-            webkitgtk_6_0
+            gtk
           ];
         };
       });

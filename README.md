@@ -2,20 +2,20 @@
 
 > Zathura for markdown. Minimal, keyboard-driven markdown viewer with vim keybindings.
 
-`mdv` is a lightweight markdown viewer built with GTK4 + WebKitGTK in Rust. It renders markdown to HTML in an embedded WebView with a Catppuccin Mocha dark theme, smooth scrolling, incremental search, link hint mode, and vim-style navigation.
+`mdv` is a lightweight markdown viewer built with GTK4 in Rust. It parses markdown with `pulldown-cmark` and renders it natively in a GTK text view with a Catppuccin Mocha-inspired dark theme, vim-style navigation, incremental search, reload, and link hint mode.
 
 Designed as the markdown equivalent of zathura: no menus, no toolbars, just keyboard-driven reading.
 
 ## Features
 
 - Vim-style navigation
-- Smooth scrolling
 - Incremental search with match count
-- Vimium-style link hints
-- Auto-generated heading anchors
-- External links open in your default browser
+- Link hint mode
+- Native GTK rendering — no embedded browser engine
 - Catppuccin Mocha dark theme
-- Syntax-highlighted code blocks via WebKit rendering
+- Headings, lists, block quotes, code blocks, tables, and links
+- External links open in your default browser
+- Reload file from disk
 
 ## Keybindings
 
@@ -29,6 +29,7 @@ Designed as the markdown equivalent of zathura: no menus, no toolbars, just keyb
 | `/` or `Ctrl+F` | Search |
 | `n` / `N` | Next / previous match |
 | `f` | Link hint mode |
+| `Enter` | Open link at cursor/search position |
 | `+` / `-` | Zoom in / out |
 | `0` | Reset zoom |
 | `r` | Reload file from disk |
@@ -86,9 +87,8 @@ nix develop
 
 - Rust
 - GTK4
-- WebKitGTK 6
 - pulldown-cmark
 
 ## Status
 
-Working prototype.
+Working native GTK prototype. On `nixos-unstable`, the current packaged runtime closure is roughly **188 MiB** after removing WebKitGTK and trimming the GTK wrapper.
