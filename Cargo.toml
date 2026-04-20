@@ -1,0 +1,18 @@
+[package]
+name = "mdv"
+version = "0.1.0"
+edition = "2021"
+description = "Zathura for markdown. Minimal, keyboard-driven markdown viewer."
+repository = "https://github.com/marnunez/mdv"
+homepage = "https://github.com/marnunez/mdv"
+readme = "README.md"
+
+[dependencies]
+gtk4 = "0.11"
+webkit6 = "0.6"
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
