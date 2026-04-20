@@ -1,8 +1,22 @@
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct HighlightStyle {
+    pub foreground: (u8, u8, u8),
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SpanKind {
+    Tag(&'static str),
+    Highlight(HighlightStyle),
+}
+
 #[derive(Clone, Debug)]
 pub struct Span {
     pub start: i32,
     pub end: i32,
-    pub tag: &'static str,
+    pub kind: SpanKind,
 }
 
 #[derive(Clone, Debug)]
@@ -17,6 +31,8 @@ pub struct LinkInfo {
 #[derive(Clone, Debug)]
 pub struct HeadingInfo {
     pub title: String,
+    pub anchor: String,
+    pub offset: i32,
 }
 
 #[derive(Clone, Debug)]

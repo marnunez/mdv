@@ -1,6 +1,13 @@
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
-use super::{HeadingInfo, LinkInfo, RenderedDoc, Span};
+use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{FontStyle, Style, Theme, ThemeSet};
+use syntect::parsing::{SyntaxReference, SyntaxSet};
+
+use super::{HeadingInfo, HighlightStyle, LinkInfo, RenderedDoc, Span, SpanKind};
+use crate::theme::AppTheme;
 
 const HINT_ALPHABET: &[u8] = b"asdfghjklqwertyuiopzxcvbnm";
 
@@ -24,6 +31,12 @@ struct ListState {
     next_number: u64,
 }
 
+#[derive(Clone, Debug)]
+struct ActiveCodeBlock {
+    start: i32,
+    language: Option<String>,
+}
+
 struct RenderBuilder {
     text: String,
     offset: i32,
@@ -36,10 +49,11 @@ struct RenderBuilder {
     strike_starts: Vec<i32>,
     heading_stack: Vec<ActiveHeading>,
     link_stack: Vec<ActiveLink>,
-    code_block_starts: Vec<i32>,
+    code_block_starts: Vec<ActiveCodeBlock>,
     quote_starts: Vec<i32>,
     list_stack: Vec<ListState>,
     table_cell_index: usize,
+    heading_anchor_counts: HashMap<String, usize>,
 }
 
 impl RenderBuilder {
@@ -60,6 +74,7 @@ impl RenderBuilder {
             quote_starts: Vec::new(),
             list_stack: Vec::new(),
             table_cell_index: 0,
+            heading_anchor_counts: HashMap::new(),
         }
     }
 
@@ -102,7 +117,7 @@ impl RenderBuilder {
         }
 
         if self.line_start && !self.quote_starts.is_empty() {
-            let prefix = "│ ".repeat(self.quote_starts.len());
+            let prefix = "▍ ".repeat(self.quote_starts.len());
             self.append_raw(&prefix);
         }
 
@@ -149,7 +164,21 @@ impl RenderBuilder {
 
     fn push_span(&mut self, start: i32, end: i32, tag: &'static str) {
         if end > start {
-            self.spans.push(Span { start, end, tag });
+            self.spans.push(Span {
+                start,
+                end,
+                kind: SpanKind::Tag(tag),
+            });
+        }
+    }
+
+    fn push_highlight_span(&mut self, start: i32, end: i32, style: HighlightStyle) {
+        if end > start {
+            self.spans.push(Span {
+                start,
+                end,
+                kind: SpanKind::Highlight(style),
+            });
         }
     }
 
@@ -159,7 +188,7 @@ impl RenderBuilder {
         }
 
         if !self.quote_starts.is_empty() {
-            let prefix = "│ ".repeat(self.quote_starts.len());
+            let prefix = "▍ ".repeat(self.quote_starts.len());
             self.append_raw(&prefix);
         }
 
@@ -174,7 +203,7 @@ impl RenderBuilder {
     }
 }
 
-pub fn render_markdown(markdown: &str) -> RenderedDoc {
+pub fn render_markdown(markdown: &str, theme: AppTheme) -> RenderedDoc {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -195,7 +224,7 @@ pub fn render_markdown(markdown: &str) -> RenderedDoc {
                 Tag::Heading { level, .. } => {
                     builder.ensure_blank_line();
                     if builder.line_start && !builder.quote_starts.is_empty() {
-                        let prefix = "│ ".repeat(builder.quote_starts.len());
+                        let prefix = "▍ ".repeat(builder.quote_starts.len());
                         builder.append_raw(&prefix);
                     }
                     builder.heading_stack.push(ActiveHeading {
@@ -210,15 +239,24 @@ pub fn render_markdown(markdown: &str) -> RenderedDoc {
                 }
                 Tag::CodeBlock(kind) => {
                     builder.ensure_blank_line();
+                    let mut language = None;
                     if let CodeBlockKind::Fenced(lang) = kind {
                         let lang = lang.trim();
                         if !lang.is_empty() {
                             builder.append_raw(&format!("{}\n", lang));
                             let start = builder.offset - lang.chars().count() as i32 - 1;
-                            builder.push_span(start, start + lang.chars().count() as i32, "muted");
+                            builder.push_span(
+                                start,
+                                start + lang.chars().count() as i32,
+                                "code_language",
+                            );
+                            language = Some(lang.to_string());
                         }
                     }
-                    builder.code_block_starts.push(builder.offset);
+                    builder.code_block_starts.push(ActiveCodeBlock {
+                        start: builder.offset,
+                        language,
+                    });
                 }
                 Tag::List(first) => {
                     if builder.list_stack.is_empty() {
@@ -237,7 +275,7 @@ pub fn render_markdown(markdown: &str) -> RenderedDoc {
                         builder.ensure_newline();
                     }
                     if builder.line_start && !builder.quote_starts.is_empty() {
-                        let prefix = "│ ".repeat(builder.quote_starts.len());
+                        let prefix = "▍ ".repeat(builder.quote_starts.len());
                         builder.append_raw(&prefix);
                     }
                     builder.table_cell_index = 0;
@@ -282,23 +320,37 @@ pub fn render_markdown(markdown: &str) -> RenderedDoc {
                     if let Some(active) = builder.heading_stack.pop() {
                         let tag_name = heading_tag_name(active.level);
                         builder.push_span(active.start, builder.offset, tag_name);
+                        let anchor = unique_heading_anchor(
+                            &mut builder.heading_anchor_counts,
+                            &active.title,
+                        );
                         builder.headings.push(HeadingInfo {
                             title: active.title,
+                            anchor,
+                            offset: active.start,
                         });
                     }
-                    builder.ensure_blank_line();
+                    builder.ensure_newline();
                 }
                 TagEnd::BlockQuote(_) => {
                     if let Some(start) = builder.quote_starts.pop() {
                         builder.push_span(start, builder.offset, "quote");
                     }
-                    builder.ensure_blank_line();
+                    builder.ensure_newline();
                 }
                 TagEnd::CodeBlock => {
-                    if let Some(start) = builder.code_block_starts.pop() {
-                        builder.push_span(start, builder.offset, "code_block");
+                    if let Some(code_block) = builder.code_block_starts.pop() {
+                        let code_end = builder.offset;
+                        builder.push_span(code_block.start, code_end, "code_block");
+                        highlight_code_block(
+                            &mut builder,
+                            code_block.start,
+                            code_end,
+                            code_block.language.as_deref(),
+                            theme,
+                        );
                     }
-                    builder.ensure_blank_line();
+                    builder.ensure_newline();
                 }
                 TagEnd::List(_) => {
                     builder.list_stack.pop();
@@ -403,6 +455,43 @@ fn collapse_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+fn unique_heading_anchor(counts: &mut HashMap<String, usize>, title: &str) -> String {
+    let base = slugify_heading(title);
+    let entry = counts.entry(base.clone()).or_insert(0);
+    let anchor = if *entry == 0 {
+        base
+    } else {
+        format!("{}-{}", base, *entry)
+    };
+    *entry += 1;
+    anchor
+}
+
+fn slugify_heading(title: &str) -> String {
+    let mut slug = String::new();
+    let mut last_was_dash = false;
+
+    for ch in title.chars().flat_map(|c| c.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            last_was_dash = false;
+        } else if (ch.is_whitespace() || ch == '-' || ch == '_') && !last_was_dash && !slug.is_empty() {
+            slug.push('-');
+            last_was_dash = true;
+        }
+    }
+
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+
+    if slug.is_empty() {
+        "section".to_string()
+    } else {
+        slug
+    }
+}
+
 fn hint_code(mut index: usize) -> String {
     let base = HINT_ALPHABET.len();
     let mut chars = Vec::new();
@@ -415,4 +504,188 @@ fn hint_code(mut index: usize) -> String {
     }
 
     chars.iter().rev().collect()
+}
+
+fn highlight_code_block(
+    builder: &mut RenderBuilder,
+    start: i32,
+    end: i32,
+    language: Option<&str>,
+    theme: AppTheme,
+) {
+    let Some(syntax) = syntax_for_language(language) else {
+        return;
+    };
+
+    let code = slice_chars(&builder.text, start, end);
+    if code.is_empty() {
+        return;
+    }
+
+    let mut highlighter = HighlightLines::new(syntax, syntax_theme(theme));
+    let mut line_start = start;
+    for line in code.split_inclusive('\n') {
+        if let Ok(ranges) = highlighter.highlight_line(line, syntax_set()) {
+            let mut token_start = line_start;
+            for (style, token) in ranges {
+                let token_len = token.chars().count() as i32;
+                if token_len > 0 {
+                    builder.push_highlight_span(token_start, token_start + token_len, to_highlight_style(style));
+                }
+                token_start += token_len;
+            }
+        }
+        line_start += line.chars().count() as i32;
+    }
+}
+
+fn syntax_set() -> &'static SyntaxSet {
+    static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn syntax_theme(theme: AppTheme) -> &'static Theme {
+    static DARK_THEME: OnceLock<Theme> = OnceLock::new();
+    static LIGHT_THEME: OnceLock<Theme> = OnceLock::new();
+
+    match theme {
+        AppTheme::EditorialNight => DARK_THEME.get_or_init(|| load_theme("base16-ocean.dark")),
+        AppTheme::EditorialDay => LIGHT_THEME.get_or_init(|| load_theme("InspiredGitHub")),
+    }
+}
+
+fn load_theme(name: &str) -> Theme {
+    ThemeSet::load_defaults().themes.remove(name).unwrap_or_default()
+}
+
+fn syntax_for_language(language: Option<&str>) -> Option<&'static SyntaxReference> {
+    let language = language?.trim();
+    if language.is_empty() {
+        return None;
+    }
+
+    let set = syntax_set();
+    set.find_syntax_by_token(language)
+        .or_else(|| set.find_syntax_by_extension(language))
+}
+
+fn to_highlight_style(style: Style) -> HighlightStyle {
+    HighlightStyle {
+        foreground: (
+            style.foreground.r,
+            style.foreground.g,
+            style.foreground.b,
+        ),
+        bold: style.font_style.contains(FontStyle::BOLD),
+        italic: style.font_style.contains(FontStyle::ITALIC),
+        underline: style.font_style.contains(FontStyle::UNDERLINE),
+    }
+}
+
+fn slice_chars(text: &str, start: i32, end: i32) -> String {
+    text.chars()
+        .skip(start.max(0) as usize)
+        .take((end - start).max(0) as usize)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn span_text(doc: &RenderedDoc, span: &Span) -> String {
+        doc.text
+            .chars()
+            .skip(span.start as usize)
+            .take((span.end - span.start) as usize)
+            .collect()
+    }
+
+    #[test]
+    fn extracts_links_and_assigns_incremental_hint_codes() {
+        let markdown = (0..27)
+            .map(|index| format!("[link {index}](https://example.com/{index})"))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let doc = render_markdown(&markdown, AppTheme::EditorialNight);
+
+        assert_eq!(doc.links.len(), 27);
+        assert_eq!(doc.links[0].code, "a");
+        assert_eq!(doc.links[1].code, "s");
+        assert_eq!(doc.links[25].code, "m");
+        assert_eq!(doc.links[26].code, "aa");
+        assert_eq!(doc.links[0].label, "link 0");
+        assert_eq!(doc.links[26].label, "link 26");
+        assert_eq!(
+            doc.spans
+                .iter()
+                .filter(|span| matches!(span.kind, SpanKind::Tag("link")))
+                .count(),
+            doc.links.len()
+        );
+    }
+
+    #[test]
+    fn normalises_heading_and_link_metadata_whitespace() {
+        let doc = render_markdown(
+            "# Heading   With   Space\n\n[link   label](https://example.com/space)",
+            AppTheme::EditorialNight,
+        );
+
+        assert_eq!(doc.headings.len(), 1);
+        assert_eq!(doc.headings[0].title, "Heading With Space");
+        assert_eq!(doc.headings[0].anchor, "heading-with-space");
+        assert_eq!(doc.links.len(), 1);
+        assert_eq!(doc.links[0].label, "link label");
+        assert!(doc.text.contains("Heading   With   Space"));
+        assert!(doc.text.contains("link   label"));
+    }
+
+    #[test]
+    fn captures_headings_with_level_specific_spans() {
+        let doc = render_markdown("# Intro\n\n### Deep Dive", AppTheme::EditorialNight);
+
+        assert_eq!(doc.headings.len(), 2);
+        assert_eq!(doc.headings[0].title, "Intro");
+        assert_eq!(doc.headings[0].anchor, "intro");
+        assert_eq!(doc.headings[1].title, "Deep Dive");
+        assert_eq!(doc.headings[1].anchor, "deep-dive");
+
+        let heading_tags = doc
+            .spans
+            .iter()
+            .filter_map(|span| match span.kind {
+                SpanKind::Tag(tag) if tag.starts_with("heading_") => Some(tag),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(heading_tags, vec!["heading_1", "heading_3"]);
+    }
+
+    #[test]
+    fn renders_fenced_code_blocks_with_language_label_and_span() {
+        let doc = render_markdown("```rust\nlet answer = 42;\n```\n", AppTheme::EditorialNight);
+
+        assert_eq!(doc.text, "rust\nlet answer = 42;\n");
+
+        let lang_span = doc
+            .spans
+            .iter()
+            .find(|span| matches!(span.kind, SpanKind::Tag("code_language")))
+            .expect("language span");
+        assert_eq!(span_text(&doc, lang_span), "rust");
+
+        let code_block_span = doc
+            .spans
+            .iter()
+            .find(|span| matches!(span.kind, SpanKind::Tag("code_block")))
+            .expect("code block span");
+        assert_eq!(span_text(&doc, code_block_span), "let answer = 42;\n");
+
+        assert!(doc
+            .spans
+            .iter()
+            .any(|span| matches!(span.kind, SpanKind::Highlight(_))));
+    }
 }

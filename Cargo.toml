@@ -10,6 +10,7 @@ readme = "README.md"
 [dependencies]
 gtk4 = "0.11"
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 [profile.release]
 opt-level = "s"

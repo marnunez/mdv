@@ -1,71 +1,76 @@
+use std::collections::HashMap;
+
+use gtk4::gdk;
 use gtk4::pango;
 use gtk4::prelude::*;
-use gtk4::TextBuffer;
+use gtk4::{TextBuffer, TextTag};
 use pulldown_cmark::HeadingLevel;
 
-use super::RenderedDoc;
+use super::{HighlightStyle, RenderedDoc, SpanKind};
+use crate::theme::ThemePalette;
 
-pub fn build_buffer(rendered: &RenderedDoc) -> TextBuffer {
+pub fn build_buffer(rendered: &RenderedDoc, palette: ThemePalette) -> TextBuffer {
     let buffer = TextBuffer::new(None::<&gtk4::TextTagTable>);
 
     let _ = buffer.create_tag(
         Some("heading_1"),
         &[
             ("weight", &700i32),
-            ("scale", &1.9f64),
-            ("foreground", &"#cba6f7"),
-            ("pixels-above-lines", &18i32),
-            ("pixels-below-lines", &8i32),
+            ("scale", &1.72f64),
+            ("foreground", &palette.heading_1),
+            ("pixels-above-lines", &12i32),
+            ("pixels-below-lines", &3i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("heading_2"),
         &[
             ("weight", &700i32),
-            ("scale", &1.55f64),
-            ("foreground", &"#89b4fa"),
-            ("pixels-above-lines", &16i32),
-            ("pixels-below-lines", &7i32),
+            ("scale", &1.42f64),
+            ("foreground", &palette.heading_2),
+            ("pixels-above-lines", &10i32),
+            ("pixels-below-lines", &3i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("heading_3"),
         &[
             ("weight", &700i32),
-            ("scale", &1.3f64),
-            ("foreground", &"#a6e3a1"),
-            ("pixels-above-lines", &14i32),
-            ("pixels-below-lines", &6i32),
+            ("scale", &1.22f64),
+            ("foreground", &palette.heading_3),
+            ("pixels-above-lines", &9i32),
+            ("pixels-below-lines", &2i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("heading_4"),
         &[
             ("weight", &700i32),
-            ("scale", &1.15f64),
-            ("foreground", &"#f9e2af"),
-            ("pixels-above-lines", &12i32),
-            ("pixels-below-lines", &5i32),
+            ("scale", &1.1f64),
+            ("foreground", &palette.heading_4),
+            ("pixels-above-lines", &8i32),
+            ("pixels-below-lines", &2i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("heading_5"),
         &[
             ("weight", &700i32),
-            ("foreground", &"#f5c2e7"),
-            ("pixels-above-lines", &10i32),
-            ("pixels-below-lines", &4i32),
+            ("foreground", &palette.heading_5),
+            ("pixels-above-lines", &7i32),
+            ("pixels-below-lines", &2i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("heading_6"),
         &[
             ("weight", &700i32),
-            ("foreground", &"#fab387"),
-            ("pixels-above-lines", &10i32),
-            ("pixels-below-lines", &4i32),
+            ("foreground", &palette.heading_6),
+            ("pixels-above-lines", &7i32),
+            ("pixels-below-lines", &2i32),
         ],
     );
+    let _ = buffer.create_tag(Some("body"), &[("foreground", &palette.body_fg)]);
     let _ = buffer.create_tag(Some("emphasis"), &[("style", &pango::Style::Italic)]);
     let _ = buffer.create_tag(Some("strong"), &[("weight", &700i32)]);
     let _ = buffer.create_tag(Some("strikethrough"), &[("strikethrough", &true)]);
@@ -73,27 +78,41 @@ pub fn build_buffer(rendered: &RenderedDoc) -> TextBuffer {
         Some("inline_code"),
         &[
             ("family", &"JetBrains Mono, Fira Code, monospace"),
-            ("background", &"#313244"),
-            ("foreground", &"#fab387"),
+            ("background", &palette.inline_code_bg),
+            ("foreground", &palette.inline_code_fg),
+            ("weight", &500i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("code_block"),
         &[
             ("family", &"JetBrains Mono, Fira Code, monospace"),
-            ("background", &"#181825"),
-            ("foreground", &"#cdd6f4"),
-            ("left-margin", &18i32),
-            ("right-margin", &18i32),
-            ("pixels-above-lines", &8i32),
-            ("pixels-below-lines", &8i32),
+            ("paragraph-background", &palette.code_block_bg),
+            ("foreground", &palette.code_block_fg),
+            ("left-margin", &16i32),
+            ("right-margin", &16i32),
+            ("indent", &8i32),
+            ("pixels-above-lines", &4i32),
+            ("pixels-below-lines", &4i32),
+            ("pixels-inside-wrap", &4i32),
+        ],
+    );
+    let _ = buffer.create_tag(
+        Some("code_language"),
+        &[
+            ("family", &"JetBrains Mono, Fira Code, monospace"),
+            ("foreground", &palette.code_language_fg),
+            ("weight", &700i32),
+            ("scale", &0.82f64),
+            ("pixels-above-lines", &2i32),
+            ("pixels-below-lines", &1i32),
         ],
     );
     let _ = buffer.create_tag(
         Some("link"),
         &[
             ("underline", &pango::Underline::Single),
-            ("foreground", &"#89b4fa"),
+            ("foreground", &palette.link_fg),
         ],
     );
     let _ = buffer.create_tag(
@@ -103,7 +122,7 @@ pub fn build_buffer(rendered: &RenderedDoc) -> TextBuffer {
             ("weight", &700i32),
             ("scale", &0.72f64),
             ("rise", &7000i32),
-            ("foreground", &"#cba6f7"),
+            ("foreground", &palette.overlay_title),
         ],
     );
     let _ = buffer.create_tag(
@@ -113,7 +132,7 @@ pub fn build_buffer(rendered: &RenderedDoc) -> TextBuffer {
             ("weight", &700i32),
             ("scale", &0.72f64),
             ("rise", &7000i32),
-            ("foreground", &"#6c7086"),
+            ("foreground", &palette.hint_dim),
         ],
     );
     let _ = buffer.create_tag(
@@ -121,41 +140,102 @@ pub fn build_buffer(rendered: &RenderedDoc) -> TextBuffer {
         &[
             ("weight", &700i32),
             ("underline", &pango::Underline::Single),
-            ("foreground", &"#f9e2af"),
+            ("foreground", &palette.link_hint_target_match),
         ],
     );
     let _ = buffer.create_tag(
         Some("link_hint_target_dim"),
-        &[
-            ("foreground", &"#6c7086"),
-        ],
+        &[("foreground", &palette.link_hint_target_dim)],
     );
     let _ = buffer.create_tag(
         Some("quote"),
         &[
-            ("foreground", &"#a6adc8"),
-            ("left-margin", &16i32),
+            ("foreground", &palette.quote_fg),
+            ("left-margin", &12i32),
+            ("indent", &4i32),
+            ("style", &pango::Style::Italic),
         ],
     );
-    let _ = buffer.create_tag(Some("muted"), &[("foreground", &"#6c7086")]);
-    let _ = buffer.create_tag(Some("search_match"), &[("background", &"#45475a")]);
+    let _ = buffer.create_tag(
+        Some("muted"),
+        &[("foreground", &palette.muted_fg), ("scale", &0.92f64)],
+    );
+    let _ = buffer.create_tag(
+        Some("search_match"),
+        &[("background", &palette.search_match_bg)],
+    );
     let _ = buffer.create_tag(
         Some("search_current"),
         &[
-            ("background", &"#f9e2af"),
-            ("foreground", &"#1e1e2e"),
+            ("background", &palette.search_current_bg),
+            ("foreground", &palette.search_current_fg),
         ],
     );
 
     buffer.set_text(&rendered.text);
 
+    let start = buffer.start_iter();
+    let end = buffer.end_iter();
+    buffer.apply_tag_by_name("body", &start, &end);
+
+    let mut highlight_tags: HashMap<HighlightStyle, String> = HashMap::new();
+
     for span in &rendered.spans {
         let start = buffer.iter_at_offset(span.start);
         let end = buffer.iter_at_offset(span.end);
-        buffer.apply_tag_by_name(span.tag, &start, &end);
+
+        match &span.kind {
+            SpanKind::Tag(tag) => buffer.apply_tag_by_name(tag, &start, &end),
+            SpanKind::Highlight(style) => {
+                let tag_name = highlight_tags
+                    .entry(style.clone())
+                    .or_insert_with(|| create_highlight_tag(&buffer, style));
+                buffer.apply_tag_by_name(tag_name, &start, &end);
+            }
+        }
+    }
+
+    if let Some(code_block_tag) = buffer.tag_table().lookup("code_block") {
+        code_block_tag.set_priority(0);
     }
 
     buffer
+}
+
+fn create_highlight_tag(buffer: &TextBuffer, style: &HighlightStyle) -> String {
+    let tag_name = format!(
+        "hl-{:02x}{:02x}{:02x}-{}{}{}",
+        style.foreground.0,
+        style.foreground.1,
+        style.foreground.2,
+        if style.bold { 'b' } else { '-' },
+        if style.italic { 'i' } else { '-' },
+        if style.underline { 'u' } else { '-' }
+    );
+
+    let tag = TextTag::new(Some(&tag_name));
+    tag.set_foreground_rgba(Some(&rgba(style.foreground)));
+    if style.bold {
+        tag.set_weight(700);
+    }
+    if style.italic {
+        tag.set_style(pango::Style::Italic);
+    }
+    if style.underline {
+        tag.set_underline(pango::Underline::Single);
+    }
+
+    buffer.tag_table().add(&tag);
+    tag_name
+}
+
+fn rgba((r, g, b): (u8, u8, u8)) -> gdk::RGBA {
+    gdk::RGBA::new(
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    )
 }
 
 #[allow(dead_code)]

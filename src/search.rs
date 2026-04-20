@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 use gtk4::{TextBuffer, TextSearchFlags};
 
 use crate::navigation::scroll_to_offset;
-use crate::viewer::{AppState, SearchMatch, Ui, update_status};
+use crate::viewer::{update_status, AppState, SearchMatch, Ui};
 
 pub(crate) fn update_search_matches(ui: &Ui, state: &mut AppState) {
     let buffer = ui.text_view.buffer();
@@ -36,7 +36,10 @@ pub(crate) fn update_search_matches(ui: &Ui, state: &mut AppState) {
         return;
     }
 
-    let current = state.current_match.unwrap_or(0).min(state.search_matches.len() - 1);
+    let current = state
+        .current_match
+        .unwrap_or(0)
+        .min(state.search_matches.len() - 1);
     state.current_match = Some(current);
     apply_current_search_match(ui, state);
 }
@@ -83,7 +86,11 @@ fn apply_current_search_match(ui: &Ui, state: &mut AppState) {
             update_status(
                 ui,
                 state,
-                Some(&format!("Match {} of {}", current + 1, state.search_matches.len())),
+                Some(&format!(
+                    "Match {} of {}",
+                    current + 1,
+                    state.search_matches.len()
+                )),
             );
         }
     }

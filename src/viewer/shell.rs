@@ -5,7 +5,7 @@ use gtk4::gdk;
 use gtk4::prelude::*;
 use gtk4::{
     Application, ApplicationWindow, Box as GtkBox, CssProvider, Entry, Fixed, Label, Orientation,
-    Overlay, PolicyType, Revealer, ScrolledWindow, TextView, WrapMode,
+    Overlay, PolicyType, Revealer, ScrolledWindow, TextView, Viewport, WrapMode,
 };
 
 #[derive(Clone)]
@@ -37,6 +37,7 @@ pub(crate) fn build_window(app: &Application) -> Ui {
         .build();
 
     let root = GtkBox::new(Orientation::Vertical, 0);
+    root.add_css_class("mdv-root");
 
     let overlay_revealer = Revealer::builder().reveal_child(false).build();
     let overlay_box = GtkBox::new(Orientation::Horizontal, 12);
@@ -66,20 +67,38 @@ pub(crate) fn build_window(app: &Application) -> Ui {
         .hexpand(true)
         .vexpand(true)
         .build();
+    scrolled.add_css_class("mdv-scroller");
+
+    let page = GtkBox::new(Orientation::Vertical, 0);
+    page.add_css_class("mdv-page");
+    page.set_hexpand(true);
+    page.set_vexpand(true);
+    page.set_margin_start(34);
+    page.set_margin_end(34);
+    page.set_margin_top(18);
+    page.set_margin_bottom(20);
 
     let text_view = TextView::new();
+    text_view.remove_css_class("view");
     text_view.set_editable(false);
     text_view.set_cursor_visible(false);
     text_view.set_wrap_mode(WrapMode::WordChar);
-    text_view.set_left_margin(36);
-    text_view.set_right_margin(36);
-    text_view.set_top_margin(28);
-    text_view.set_bottom_margin(28);
+    text_view.set_left_margin(0);
+    text_view.set_right_margin(0);
+    text_view.set_top_margin(0);
+    text_view.set_bottom_margin(0);
     text_view.add_css_class("mdv-view");
     text_view.grab_focus();
-    scrolled.set_child(Some(&text_view));
+    page.append(&text_view);
+
+    let viewport = Viewport::new(None::<&gtk4::Adjustment>, None::<&gtk4::Adjustment>);
+    viewport.remove_css_class("view");
+    viewport.add_css_class("mdv-viewport");
+    viewport.set_child(Some(&page));
+    scrolled.set_child(Some(&viewport));
 
     let view_overlay = Overlay::new();
+    view_overlay.add_css_class("mdv-content");
     view_overlay.set_child(Some(&scrolled));
 
     let hint_layer = Fixed::new();
@@ -107,7 +126,7 @@ pub(crate) fn build_window(app: &Application) -> Ui {
         gtk4::style_context_add_provider_for_display(
             &display,
             &css_provider,
-            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            gtk4::STYLE_PROVIDER_PRIORITY_USER,
         );
     }
 

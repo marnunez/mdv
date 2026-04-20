@@ -1,4 +1,6 @@
+use gtk4::graphene;
 use gtk4::prelude::*;
+use gtk4::TextWindowType;
 
 use crate::viewer::Ui;
 
@@ -58,8 +60,37 @@ pub(crate) fn scroll_to_bottom(ui: &Ui) {
 }
 
 pub(crate) fn scroll_to_offset(ui: &Ui, offset: i32, yalign: f64) {
+    scroll_to_offset_within_page(ui, offset, yalign);
+}
+
+pub(crate) fn scroll_to_offset_aligned(ui: &Ui, offset: i32, yalign: f64) {
+    scroll_to_offset_within_page(ui, offset, yalign);
+}
+
+fn scroll_to_offset_within_page(ui: &Ui, offset: i32, yalign: f64) {
     let buffer = ui.text_view.buffer();
-    let mut iter = buffer.iter_at_offset(offset);
+    let iter = buffer.iter_at_offset(offset);
     buffer.place_cursor(&iter);
-    ui.text_view.scroll_to_iter(&mut iter, 0.15, false, 0.0, yalign);
+
+    let Some(current_y) = offset_y_in_view(ui, offset) else {
+        return;
+    };
+
+    let adj = ui.scrolled.vadjustment();
+    let max = (adj.upper() - adj.page_size()).max(adj.lower());
+    let target = (adj.value() + current_y - (adj.page_size() * yalign)).clamp(adj.lower(), max);
+    adj.set_value(target);
+}
+
+fn offset_y_in_view(ui: &Ui, offset: i32) -> Option<f64> {
+    let buffer = ui.text_view.buffer();
+    let iter = buffer.iter_at_offset(offset);
+    let location = ui.text_view.iter_location(&iter);
+    let (window_x, window_y) = ui
+        .text_view
+        .buffer_to_window_coords(TextWindowType::Widget, location.x(), location.y());
+    let point = graphene::Point::new(window_x as f32, window_y as f32);
+    ui.text_view
+        .compute_point(&ui.hint_layer, &point)
+        .map(|point| point.y() as f64)
 }

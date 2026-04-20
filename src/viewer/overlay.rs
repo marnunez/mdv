@@ -6,7 +6,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 
 use crate::links::{
-    hide_link_hints, link_hint_match_count, link_hint_status_message, open_external_link,
+    activate_link, hide_link_hints, link_hint_match_count, link_hint_status_message,
     selected_link_url, sync_link_hints,
 };
 use crate::search::update_search_matches;
@@ -14,18 +14,37 @@ use crate::search::update_search_matches;
 use super::document::update_status;
 use super::{AppState, OverlayMode, Ui};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SearchEntryChange {
+    Updated,
+    IgnoredNotSearching,
+    IgnoredWhileBusy,
+}
+
+fn apply_search_entry_change(state: &RefCell<AppState>, query: &str) -> SearchEntryChange {
+    let Ok(mut state) = state.try_borrow_mut() else {
+        return SearchEntryChange::IgnoredWhileBusy;
+    };
+
+    if state.overlay_mode != OverlayMode::Search {
+        return SearchEntryChange::IgnoredNotSearching;
+    }
+
+    state.search_query = query.to_string();
+    state.current_match = Some(0);
+    SearchEntryChange::Updated
+}
+
 pub(crate) fn wire_overlay_events(ui: &Ui, state: &Rc<RefCell<AppState>>) {
     let ui_changed = ui.clone();
     let state_changed = state.clone();
     ui.overlay_entry.connect_changed(move |entry| {
-        let mut state = state_changed.borrow_mut();
-        match state.overlay_mode {
-            OverlayMode::Search => {
-                state.search_query = entry.text().to_string();
-                state.current_match = Some(0);
-                update_search_matches(&ui_changed, &mut state);
-            }
-            OverlayMode::LinkHints | OverlayMode::None => {}
+        let query = entry.text();
+        if apply_search_entry_change(state_changed.as_ref(), query.as_ref())
+            == SearchEntryChange::Updated
+        {
+            let mut state = state_changed.borrow_mut();
+            update_search_matches(&ui_changed, &mut state);
         }
     });
 
@@ -79,10 +98,13 @@ fn handle_link_hint_key(ui: &Ui, state: &mut AppState, keyval: gdk::Key) -> glib
         }
         gdk::Key::Return | gdk::Key::KP_Enter => {
             if let Some(url) = selected_link_url(state) {
-                open_external_link(&url);
-                hide_overlay(ui, state);
-                update_status(ui, state, Some(&format!("Opened {}", url)));
-                ui.text_view.grab_focus();
+                if activate_link(ui, state, &url) {
+                    hide_overlay(ui, state);
+                    update_status(ui, state, Some(&format!("Opened {}", url)));
+                    ui.text_view.grab_focus();
+                } else {
+                    update_status(ui, state, Some(&format!("Missing anchor {}", url)));
+                }
             } else {
                 update_status(ui, state, Some("Link hints — type until one match remains"));
             }
@@ -95,10 +117,13 @@ fn handle_link_hint_key(ui: &Ui, state: &mut AppState, keyval: gdk::Key) -> glib
                     sync_link_hints(ui, state);
 
                     if let Some(url) = selected_link_url(state) {
-                        open_external_link(&url);
-                        hide_overlay(ui, state);
-                        update_status(ui, state, Some(&format!("Opened {}", url)));
-                        ui.text_view.grab_focus();
+                        if activate_link(ui, state, &url) {
+                            hide_overlay(ui, state);
+                            update_status(ui, state, Some(&format!("Opened {}", url)));
+                            ui.text_view.grab_focus();
+                        } else {
+                            update_status(ui, state, Some(&format!("Missing anchor {}", url)));
+                        }
                     } else if link_hint_match_count(state) == 0 {
                         update_status(ui, state, Some("Link hints — no matches"));
                     } else {
@@ -149,4 +174,71 @@ pub(crate) fn hide_overlay(ui: &Ui, state: &mut AppState) {
     ui.overlay_info.set_text("");
     hide_link_hints(ui);
     update_status(ui, state, None);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    fn search_state() -> RefCell<AppState> {
+        let mut state = AppState::new(PathBuf::from("test.md"));
+        state.overlay_mode = OverlayMode::Search;
+        RefCell::new(state)
+    }
+
+    #[test]
+    fn search_entry_change_updates_query_and_resets_match_index() {
+        let state = search_state();
+        {
+            let mut state = state.borrow_mut();
+            state.search_query = "before".to_string();
+            state.current_match = Some(3);
+        }
+
+        assert_eq!(
+            apply_search_entry_change(&state, "after"),
+            SearchEntryChange::Updated
+        );
+
+        let state = state.borrow();
+        assert_eq!(state.search_query, "after");
+        assert_eq!(state.current_match, Some(0));
+    }
+
+    #[test]
+    fn search_entry_change_ignores_non_search_modes() {
+        let state = RefCell::new(AppState::new(PathBuf::from("test.md")));
+
+        assert_eq!(
+            apply_search_entry_change(&state, "needle"),
+            SearchEntryChange::IgnoredNotSearching
+        );
+
+        let state = state.borrow();
+        assert!(state.search_query.is_empty());
+        assert_eq!(state.current_match, None);
+    }
+
+    #[test]
+    fn search_entry_change_ignores_reentrant_updates_while_overlay_is_hiding() {
+        let state = search_state();
+        {
+            let mut state = state.borrow_mut();
+            state.search_query = "needle".to_string();
+            state.current_match = Some(2);
+        }
+
+        let active_borrow = state.borrow_mut();
+        assert_eq!(
+            apply_search_entry_change(&state, ""),
+            SearchEntryChange::IgnoredWhileBusy
+        );
+        drop(active_borrow);
+
+        let state = state.borrow();
+        assert_eq!(state.search_query, "needle");
+        assert_eq!(state.current_match, Some(2));
+    }
 }

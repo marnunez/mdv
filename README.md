@@ -2,7 +2,7 @@
 
 > Zathura for markdown. Minimal, keyboard-driven markdown viewer with vim keybindings.
 
-`mdv` is a lightweight markdown viewer built with GTK4 in Rust. It parses markdown with `pulldown-cmark` and renders it natively in a GTK text view with a Catppuccin Mocha-inspired dark theme, vim-style navigation, incremental search, reload, and link hint mode.
+`mdv` is a lightweight markdown viewer built with GTK4 in Rust. It parses markdown with `pulldown-cmark` and renders it natively in a GTK text view with editorial night/day themes, vim-style navigation, incremental search, reload, internal heading links, and visible-only link hint mode.
 
 Designed as the markdown equivalent of zathura: no menus, no toolbars, just keyboard-driven reading.
 
@@ -10,12 +10,14 @@ Designed as the markdown equivalent of zathura: no menus, no toolbars, just keyb
 
 - Vim-style navigation
 - Incremental search with match count
-- Link hint mode
+- Visible-only link hint mode
+- Internal heading links (`#anchors`)
+- Theme toggle between Editorial Night and Editorial Day
 - Native GTK rendering — no embedded browser engine
-- Catppuccin Mocha dark theme
 - Headings, lists, block quotes, code blocks, tables, and links
 - External links open in your default browser
 - Reload file from disk
+- Mouse text selection and copy
 
 ## Keybindings
 
@@ -30,6 +32,7 @@ Designed as the markdown equivalent of zathura: no menus, no toolbars, just keyb
 | `n` / `N` | Next / previous match |
 | `f` | Link hint mode |
 | `Enter` | Open link at cursor/search position |
+| `t` | Toggle theme |
 | `+` / `-` | Zoom in / out |
 | `0` | Reset zoom |
 | `r` | Reload file from disk |
@@ -91,4 +94,4 @@ nix develop
 
 ## Status
 
-Working native GTK prototype. On `nixos-unstable`, the current packaged runtime closure is roughly **188 MiB** after removing WebKitGTK and trimming the GTK wrapper.
+Working native GTK viewer with syntax highlighting, internal anchors, visible-only hints, and editorial night/day themes. On `nixos-unstable`, the packaged runtime closure is roughly **188 MiB** after removing WebKitGTK and trimming the GTK wrapper.

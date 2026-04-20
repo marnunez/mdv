@@ -28,7 +28,7 @@ use shell::build_window;
 
 pub(crate) use document::{reload_document, update_status};
 pub(crate) use shell::{LinkHintWidget, Ui};
-pub(crate) use state::{AppState, OverlayMode, SearchMatch};
+pub(crate) use state::{AppState, OverlayMode, SearchMatch, VisibleLinkHint};
 
 pub fn build_ui(app: &Application, file_path: PathBuf) {
     let ui = build_window(app);
@@ -36,7 +36,7 @@ pub fn build_ui(app: &Application, file_path: PathBuf) {
 
     let state = Rc::new(RefCell::new(AppState::new(file_path)));
     apply_initial_theme(&ui, &state);
-    reload_document(&ui, &state);
+    reload_document(&ui, &state, false);
     wire_overlay_events(&ui, &state);
     wire_keybindings(&ui, &state, &window);
     wire_hint_tracking(&ui, &state);
@@ -47,9 +47,9 @@ fn wire_hint_tracking(ui: &Ui, state: &Rc<RefCell<AppState>>) {
     let ui_tick = ui.clone();
     let state_tick = state.clone();
     ui.text_view.add_tick_callback(move |_, _| {
-        let state = state_tick.borrow();
+        let mut state = state_tick.borrow_mut();
         if state.overlay_mode == OverlayMode::LinkHints {
-            sync_link_hints(&ui_tick, &state);
+            sync_link_hints(&ui_tick, &mut state);
         }
         glib::ControlFlow::Continue
     });
@@ -147,28 +147,35 @@ fn wire_keybindings(ui: &Ui, state: &Rc<RefCell<AppState>>, window: &Application
             gdk::Key::plus | gdk::Key::KP_Add => {
                 state.pending_g = false;
                 state.zoom_level = (state.zoom_level + 0.1).min(2.5);
-                apply_css(&ui_key.css_provider, state.zoom_level);
+                apply_css(&ui_key.css_provider, state.zoom_level, state.theme);
                 update_status(&ui_key, &state, None);
                 glib::Propagation::Stop
             }
             gdk::Key::minus | gdk::Key::KP_Subtract => {
                 state.pending_g = false;
                 state.zoom_level = (state.zoom_level - 0.1).max(0.6);
-                apply_css(&ui_key.css_provider, state.zoom_level);
+                apply_css(&ui_key.css_provider, state.zoom_level, state.theme);
                 update_status(&ui_key, &state, None);
                 glib::Propagation::Stop
             }
             gdk::Key::_0 | gdk::Key::KP_0 => {
                 state.pending_g = false;
                 state.zoom_level = 1.0;
-                apply_css(&ui_key.css_provider, state.zoom_level);
+                apply_css(&ui_key.css_provider, state.zoom_level, state.theme);
                 update_status(&ui_key, &state, None);
                 glib::Propagation::Stop
             }
             gdk::Key::r => {
                 state.pending_g = false;
                 drop(state);
-                reload_document(&ui_key, &state_rc);
+                reload_document(&ui_key, &state_rc, true);
+                glib::Propagation::Stop
+            }
+            gdk::Key::t => {
+                state.pending_g = false;
+                state.theme = state.theme.toggle();
+                drop(state);
+                reload_document(&ui_key, &state_rc, true);
                 glib::Propagation::Stop
             }
             gdk::Key::Return | gdk::Key::KP_Enter => {
