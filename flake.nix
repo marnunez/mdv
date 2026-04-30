@@ -11,18 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        gtkBase = pkgs.gtk4.override {
-          trackerSupport = false;
-          cupsSupport = false;
-          vulkanSupport = false;
-          broadwaySupport = false;
-        };
-
-        gtk = gtkBase.overrideAttrs (old: {
-          mesonFlags = (old.mesonFlags or [ ]) ++ [
-            "-Dmedia-gstreamer=disabled"
-          ];
-        });
+        gtk = pkgs.gtk4;
 
         desktopItem = pkgs.makeDesktopItem {
           name = "mdv";
@@ -42,10 +31,6 @@
           src = ./.;
 
           cargoLock.lockFile = ./Cargo.lock;
-
-          env = {
-            PKG_CONFIG_PATH = "${gtk.dev}/lib/pkgconfig";
-          };
 
           nativeBuildInputs = with pkgs; [
             pkg-config
